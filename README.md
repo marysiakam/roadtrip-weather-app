@@ -1,6 +1,6 @@
 # Roadtrip Weather Forecast
 
-> **Work in progress.** Built with the assistance of Claude Code..
+> **Work in progress.** Built with the assistance of Claude Code.
 
 Enter a start and end address and see the forecasted weather at each leg of
 your drive, timed to when you'll actually be there — with a heads-up if

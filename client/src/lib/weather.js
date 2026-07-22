@@ -68,11 +68,21 @@ function hazardReasons({ weatherCode, precipitationProbability, windSpeedMph }) 
   return reasons;
 }
 
-function closestHourIndex(hourlyTimesUtc, targetEpochMs) {
+/**
+ * Open-Meteo (with timezone=auto) returns each hour as a local wall-clock
+ * string for that location, with no UTC marker. Parsing "<string>Z" reads
+ * those digits as if they were UTC, which is off by exactly the location's
+ * UTC offset — subtracting it back out gives the true UTC instant.
+ */
+function localTimeToEpochMs(localTimeStr, utcOffsetSeconds) {
+  return Date.parse(`${localTimeStr}Z`) - utcOffsetSeconds * 1000;
+}
+
+function closestHourIndex(hourlyTimesLocal, utcOffsetSeconds, targetEpochMs) {
   let bestIndex = 0;
   let bestDiff = Infinity;
-  for (let i = 0; i < hourlyTimesUtc.length; i++) {
-    const diff = Math.abs(Date.parse(`${hourlyTimesUtc[i]}Z`) - targetEpochMs);
+  for (let i = 0; i < hourlyTimesLocal.length; i++) {
+    const diff = Math.abs(localTimeToEpochMs(hourlyTimesLocal[i], utcOffsetSeconds) - targetEpochMs);
     if (diff < bestDiff) {
       bestDiff = diff;
       bestIndex = i;
@@ -91,13 +101,14 @@ const HOURLY_WINDOW_RADIUS = 2;
  */
 function buildHourlyWindow(forecast, targetIdx) {
   const { time, temperature_2m, weathercode, is_day } = forecast.hourly;
+  const offset = forecast.utc_offset_seconds;
   const start = Math.max(0, targetIdx - HOURLY_WINDOW_RADIUS);
   const end = Math.min(time.length - 1, targetIdx + HOURLY_WINDOW_RADIUS);
 
   const window = [];
   for (let i = start; i <= end; i++) {
     window.push({
-      time: new Date(`${time[i]}Z`),
+      time: new Date(localTimeToEpochMs(time[i], offset)),
       temperatureF: temperature_2m[i],
       condition: conditionFor(weathercode[i], is_day[i] === 1),
       isTarget: i === targetIdx,
@@ -117,15 +128,16 @@ const CARD_TREND_STEP_HOURS = 2;
  */
 function buildCardTrend(forecast, targetIdx) {
   const { time, temperature_2m, weathercode, is_day } = forecast.hourly;
+  const utcOffsetSeconds = forecast.utc_offset_seconds;
   const points = [];
-  for (let offset = -CARD_TREND_RADIUS_HOURS; offset <= CARD_TREND_RADIUS_HOURS; offset += CARD_TREND_STEP_HOURS) {
-    const i = targetIdx + offset;
+  for (let hourOffset = -CARD_TREND_RADIUS_HOURS; hourOffset <= CARD_TREND_RADIUS_HOURS; hourOffset += CARD_TREND_STEP_HOURS) {
+    const i = targetIdx + hourOffset;
     if (i < 0 || i >= time.length) continue;
     points.push({
-      time: new Date(`${time[i]}Z`),
+      time: new Date(localTimeToEpochMs(time[i], utcOffsetSeconds)),
       temperatureF: temperature_2m[i],
       condition: conditionFor(weathercode[i], is_day[i] === 1),
-      isTarget: offset === 0,
+      isTarget: hourOffset === 0,
     });
   }
   return points;
@@ -134,8 +146,12 @@ function buildCardTrend(forecast, targetIdx) {
 /**
  * Fetches hourly forecasts for every checkpoint in one batched Open-Meteo
  * call (comma-separated lat/lon), then matches each checkpoint's ETA to the
- * nearest forecast hour. Times are compared as absolute UTC instants so the
- * match stays correct across timezone boundaries along the route.
+ * nearest forecast hour. Requests `timezone=auto` so Open-Meteo resolves each
+ * location's own IANA timezone — matching is still done as absolute UTC
+ * instants (converting local-time strings back via each location's own UTC
+ * offset), but the resolved zone is attached to the checkpoint so the UI can
+ * *display* times in the place's own local time instead of the viewer's
+ * browser timezone.
  */
 export async function fetchCheckpointWeather(checkpoints, departureDate) {
   const latitudes = checkpoints.map((cp) => cp.lat).join(",");
@@ -147,7 +163,7 @@ export async function fetchCheckpointWeather(checkpoints, departureDate) {
     hourly: "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weathercode,windspeed_10m,is_day",
     temperature_unit: "fahrenheit",
     wind_speed_unit: "mph",
-    timezone: "UTC",
+    timezone: "auto",
     forecast_days: "10",
   });
 
@@ -162,8 +178,9 @@ export async function fetchCheckpointWeather(checkpoints, departureDate) {
 
   return checkpoints.map((cp, i) => {
     const forecast = results[i];
+    const utcOffsetSeconds = forecast.utc_offset_seconds;
     const targetEpochMs = departureDate.getTime() + cp.etaSeconds * 1000;
-    const idx = closestHourIndex(forecast.hourly.time, targetEpochMs);
+    const idx = closestHourIndex(forecast.hourly.time, utcOffsetSeconds, targetEpochMs);
 
     const weatherCode = forecast.hourly.weathercode[idx];
     const precipitationProbability = forecast.hourly.precipitation_probability[idx];
@@ -178,7 +195,10 @@ export async function fetchCheckpointWeather(checkpoints, departureDate) {
     return {
       ...cp,
       etaDate: new Date(targetEpochMs),
-      forecastTimeUtc: forecast.hourly.time[idx],
+      timezone: forecast.timezone,
+      timezoneAbbreviation: forecast.timezone_abbreviation,
+      utcOffsetSeconds,
+      forecastTimeLocal: forecast.hourly.time[idx],
       temperatureF,
       feelsLikeF,
       humidity,

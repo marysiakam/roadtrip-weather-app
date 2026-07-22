@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-const LONG_PRESS_MS = 550;
-const MOVE_CANCEL_PX = 10;
 const PREVIEW_SINGLE_PIN_ZOOM = 10;
 
 function FitBounds({ positions }) {
@@ -31,46 +29,13 @@ function RecenterOnPreview({ positions }) {
   return null;
 }
 
-function LongPressHandler({ onLongPress }) {
-  const timerRef = useRef(null);
-  const startPointRef = useRef(null);
-
-  const map = useMapEvents({
-    mousedown(e) {
-      startPointRef.current = map.latLngToContainerPoint(e.latlng);
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        onLongPress(e.latlng);
-      }, LONG_PRESS_MS);
-    },
-    mousemove(e) {
-      if (!timerRef.current || !startPointRef.current) return;
-      const movedPx = map.latLngToContainerPoint(e.latlng).distanceTo(startPointRef.current);
-      if (movedPx > MOVE_CANCEL_PX) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    },
-    mouseup() {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
+/** Active only while "add a stop" mode is armed — the next tap places a stop there. */
+function MapClickToAdd({ onAdd }) {
+  useMapEvents({
+    click(e) {
+      onAdd(e.latlng.lat, e.latlng.lng);
     },
   });
-
-  return null;
-}
-
-function CenterTracker({ centerRef }) {
-  const map = useMapEvents({
-    moveend() {
-      centerRef.current = map.getCenter();
-    },
-  });
-  useEffect(() => {
-    centerRef.current = map.getCenter();
-  }, [map]);
   return null;
 }
 
@@ -104,6 +69,8 @@ function checkpointIcon(cp) {
  * read its transform. Memoizing avoids ever swapping the node during a drag.
  */
 function CheckpointMarker({ cp, isEndpoint, onMoveCheckpoint }) {
+  const isDraggable = !isEndpoint && !!onMoveCheckpoint;
+
   const icon = useMemo(
     () => checkpointIcon(cp),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,7 +78,7 @@ function CheckpointMarker({ cp, isEndpoint, onMoveCheckpoint }) {
   );
 
   const eventHandlers = useMemo(() => {
-    if (isEndpoint || !onMoveCheckpoint) return undefined;
+    if (!isDraggable) return undefined;
     return {
       dragend: (e) => {
         const { lat, lng } = e.target.getLatLng();
@@ -119,20 +86,15 @@ function CheckpointMarker({ cp, isEndpoint, onMoveCheckpoint }) {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEndpoint, onMoveCheckpoint, cp]);
+  }, [isDraggable, onMoveCheckpoint, cp]);
 
   return (
-    <Marker
-      position={[cp.lat, cp.lon]}
-      icon={icon}
-      draggable={!isEndpoint && !!onMoveCheckpoint}
-      eventHandlers={eventHandlers}
-    >
+    <Marker position={[cp.lat, cp.lon]} icon={icon} draggable={isDraggable} eventHandlers={eventHandlers}>
       <Popup>
         <strong>{cp.name}</strong>
         <br />
         {cp.condition.icon} {cp.condition.label}, {Math.round(cp.temperatureF)}°F
-        {!isEndpoint && (
+        {isDraggable && (
           <>
             <br />
             <em>Drag to move along the route</em>
@@ -153,11 +115,12 @@ export default function RouteMap({
   checkpoints,
   onAddCheckpoint,
   onMoveCheckpoint,
+  isAddingStop = false,
+  onToggleAddMode,
   previewMarkers = [],
   initialCenter,
   initialZoom = 4,
 }) {
-  const centerRef = useRef(null);
   const hasRoute = routePath && routePath.length > 0;
 
   const routePositions = hasRoute ? routePath.map((p) => [p.lat, p.lon]) : [];
@@ -167,12 +130,6 @@ export default function RouteMap({
     ? routePositions[0]
     : previewPositions[0] ?? initialCenter ?? [39.8283, -98.5795];
   const mapZoom = hasRoute ? 6 : previewPositions.length > 0 ? PREVIEW_SINGLE_PIN_ZOOM : initialZoom;
-
-  function handleAddAtCenter() {
-    if (centerRef.current && onAddCheckpoint) {
-      onAddCheckpoint(centerRef.current.lat, centerRef.current.lng);
-    }
-  }
 
   return (
     <div className="route-map">
@@ -211,21 +168,29 @@ export default function RouteMap({
             </CircleMarker>
           ))}
 
-        {hasRoute && onAddCheckpoint && (
-          <LongPressHandler onLongPress={(latlng) => onAddCheckpoint(latlng.lat, latlng.lng)} />
-        )}
-        <CenterTracker centerRef={centerRef} />
+        {hasRoute && isAddingStop && onAddCheckpoint && <MapClickToAdd onAdd={onAddCheckpoint} />}
         {hasRoute && <FitBounds positions={routePositions} />}
         {!hasRoute && <RecenterOnPreview positions={previewPositions} />}
       </MapContainer>
 
-      {hasRoute && onAddCheckpoint && (
-        <>
-          <div className="map-center-pin" aria-hidden="true" />
-          <button className="map-add-stop" onClick={handleAddAtCenter} aria-label="Add a stop at map center">
-            +
+      {hasRoute && isAddingStop && (
+        <div className="map-add-instruction">
+          <span>Tap the map where you'd like to stop</span>
+          <button type="button" onClick={onToggleAddMode}>
+            Cancel
           </button>
-        </>
+        </div>
+      )}
+
+      {hasRoute && onAddCheckpoint && (
+        <button
+          className={`map-add-stop${isAddingStop ? " armed" : ""}`}
+          onClick={onToggleAddMode}
+          aria-label={isAddingStop ? "Cancel adding a waypoint" : "Add waypoint"}
+          aria-pressed={isAddingStop}
+        >
+          {isAddingStop ? "×" : "+"}
+        </button>
       )}
     </div>
   );

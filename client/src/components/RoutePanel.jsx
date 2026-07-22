@@ -8,11 +8,20 @@ function formatMiles(meters) {
   return `${Math.round(meters / 1609.34)} mi`;
 }
 
-function formatClockTime(date) {
-  return date.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+function formatClockTime(date, timeZone) {
+  return date.toLocaleString(undefined, { hour: "numeric", minute: "2-digit", timeZone });
 }
 
-export default function RoutePanel({ route, checkpointCount, arrivalDate, allRoutes, selectedRouteId, onSelectRoute, departureDate }) {
+export default function RoutePanel({
+  route,
+  checkpointCount,
+  arrivalDate,
+  allRoutes,
+  selectedRouteId,
+  onSelectRoute,
+  departureDate,
+  destinationTimezone,
+}) {
   return (
     <div className="route-panel">
       <div className="stat-grid">
@@ -26,7 +35,7 @@ export default function RoutePanel({ route, checkpointCount, arrivalDate, allRou
         </div>
         <div className="stat">
           <div className="k">Arrival</div>
-          <div className="v">{arrivalDate ? formatClockTime(arrivalDate) : "—"}</div>
+          <div className="v">{arrivalDate ? formatClockTime(arrivalDate, destinationTimezone) : "—"}</div>
         </div>
         <div className="stat">
           <div className="k">Stops</div>
@@ -48,7 +57,7 @@ export default function RoutePanel({ route, checkpointCount, arrivalDate, allRou
                 {r.isRecommended && <span className="route-option-badge">Fastest</span>}
                 <div className="route-option-time">{formatDuration(r.totalDurationSeconds)}</div>
                 <div className="route-option-detail">
-                  {formatMiles(r.totalDistanceMeters)} · arrive {formatClockTime(arrival)}
+                  {formatMiles(r.totalDistanceMeters)} · arrive {formatClockTime(arrival, destinationTimezone)}
                 </div>
               </button>
             );

@@ -1,13 +1,14 @@
-function formatEta(date) {
+function formatEta(date, timeZone) {
   return date.toLocaleString(undefined, {
     weekday: "short",
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   });
 }
 
-function formatHour(date) {
-  return date.toLocaleTimeString(undefined, { hour: "numeric" });
+function formatHour(date, timeZone) {
+  return date.toLocaleTimeString(undefined, { hour: "numeric", timeZone });
 }
 
 export default function StopDetail({ checkpoint, isOpen, onClose }) {
@@ -29,7 +30,7 @@ export default function StopDetail({ checkpoint, isOpen, onClose }) {
         <div className="detail-temp">{Math.round(cp.temperatureF)}°</div>
         <div className="detail-cond">{cp.condition.label}</div>
         <div className="detail-name">{cp.name}</div>
-        <div className="detail-eta">Est. arrival {formatEta(cp.etaDate)}</div>
+        <div className="detail-eta">Est. arrival {formatEta(cp.etaDate, cp.timezone)}</div>
       </div>
 
       {cp.hazard && (
@@ -45,7 +46,9 @@ export default function StopDetail({ checkpoint, isOpen, onClose }) {
       <div className="detail-hourly">
         {cp.hourlyWindow.map((h) => (
           <div key={h.time.toISOString()} className={`hour-col${h.isTarget ? " now" : ""}`}>
-            <span className="hour-label">{h.isTarget ? "Now" : formatHour(h.time)}</span>
+            <span className="hour-label">
+              {h.isTarget ? (cp.isStart ? "ETD" : "ETA") : formatHour(h.time, cp.timezone)}
+            </span>
             <span className="hour-icon">{h.condition.icon}</span>
             <span className="hour-temp">{Math.round(h.temperatureF)}°</span>
           </div>

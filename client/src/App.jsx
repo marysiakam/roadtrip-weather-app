@@ -1,5 +1,6 @@
 import { useState } from "react";
 import TripForm from "./components/TripForm";
+import AddressInput from "./components/AddressInput";
 import Timeline from "./components/Timeline";
 import HazardsPanel from "./components/HazardsPanel";
 import RoutePanel from "./components/RoutePanel";
@@ -34,6 +35,11 @@ function App() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [routeNotices, setRouteNotices] = useState([]);
 
+  const [isAddingStop, setIsAddingStop] = useState(false);
+  const [showMapHint, setShowMapHint] = useState(false);
+  const [isAddingStopByAddress, setIsAddingStopByAddress] = useState(false);
+  const [addStopText, setAddStopText] = useState("");
+
   const selectedRoute = trip?.routes.find((r) => r.id === selectedRouteId) ?? null;
 
   async function loadWeatherForRoute(route, forDepartureDate) {
@@ -62,6 +68,7 @@ function App() {
       setMode("results");
       setIsSheetExpanded(false);
       setActiveTab("timeline");
+      setShowMapHint(true);
     } catch (err) {
       setError({ message: err.message || "Something went wrong", severity: err.severity || "system" });
     } finally {
@@ -98,6 +105,8 @@ function App() {
     try {
       const custom = await buildCustomCheckpoint(selectedRoute.routePath, departureDate, lat, lon);
       setCheckpoints((prev) => [...prev, custom].sort((a, b) => a.etaSeconds - b.etaSeconds));
+      setIsAddingStop(false);
+      setShowMapHint(false);
     } catch (err) {
       setError({ message: err.message || "Couldn't add that checkpoint", severity: "user" });
     }
@@ -112,9 +121,20 @@ function App() {
           (a, b) => a.etaSeconds - b.etaSeconds
         )
       );
+      setShowMapHint(false);
     } catch (err) {
       setError({ message: err.message || "Couldn't move that checkpoint", severity: "user" });
     }
+  }
+
+  function handleToggleAddMode() {
+    setIsAddingStop((prev) => !prev);
+  }
+
+  function handleAddStopByAddress(loc) {
+    handleAddCheckpoint(loc.lat, loc.lon);
+    setIsAddingStopByAddress(false);
+    setAddStopText("");
   }
 
   function handleDeleteCheckpoint(cpToRemove) {
@@ -140,6 +160,7 @@ function App() {
     departureDate && selectedRoute
       ? new Date(departureDate.getTime() + selectedRoute.totalDurationSeconds * 1000)
       : null;
+  const destinationTimezone = checkpoints?.find((cp) => cp.isEnd)?.timezone;
 
   const hazardCount = checkpoints ? checkpoints.filter((cp) => cp.hazard).length : 0;
   const hasResults = mode === "results" && trip && selectedRoute && checkpoints;
@@ -158,10 +179,21 @@ function App() {
           checkpoints={hasResults ? checkpoints : []}
           onAddCheckpoint={hasResults ? handleAddCheckpoint : undefined}
           onMoveCheckpoint={hasResults ? handleMoveCheckpoint : undefined}
+          isAddingStop={isAddingStop}
+          onToggleAddMode={handleToggleAddMode}
           previewMarkers={mode === "search" ? previewMarkers : []}
           initialCenter={[SEATTLE_FALLBACK.lat, SEATTLE_FALLBACK.lon]}
           initialZoom={11}
         />
+
+        {hasResults && showMapHint && !isAddingStop && (
+          <div className="map-hint-banner">
+            <span>Drag any stop to move it · Tap + to add one</span>
+            <button type="button" aria-label="Dismiss" onClick={() => setShowMapHint(false)}>
+              ×
+            </button>
+          </div>
+        )}
       </div>
 
       <BottomSheet
@@ -184,7 +216,12 @@ function App() {
                 <>
                   {" "}
                   · arrive around{" "}
-                  {arrivalDate.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}
+                  {arrivalDate.toLocaleString(undefined, {
+                    weekday: "short",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    timeZone: destinationTimezone,
+                  })}
                 </>
               )}
             </p>
@@ -206,7 +243,7 @@ function App() {
               Where&rsquo;s the road trip? <strong>Tap to plan one</strong>
             </button>
             <div className="search-sheet-title">
-              <h2>Farsight</h2>
+              <h2>Roadtrip Weather Forecast</h2>
               <p>Weather and road conditions, timed to your drive</p>
             </div>
           </div>
@@ -236,19 +273,47 @@ function App() {
                   selectedRouteId={selectedRouteId}
                   onSelectRoute={handleSelectRoute}
                   departureDate={departureDate}
+                  destinationTimezone={destinationTimezone}
                 />
               </div>
             </>
           )}
         </div>
 
-        {mode === "results" && (
-          <div className="action-bar">
-            <button className="cta" onClick={handleEditTrip}>
-              Edit trip
-            </button>
-          </div>
-        )}
+        {mode === "results" &&
+          (isAddingStopByAddress ? (
+            <div className="action-bar add-stop-by-address">
+              <AddressInput
+                id="add-stop"
+                label="Add waypoint"
+                placeholder="Search for a town or landmark along the way"
+                value={addStopText}
+                onChange={setAddStopText}
+                onSelectLocation={handleAddStopByAddress}
+                focusPoint={trip ? { lat: trip.start.lat, lon: trip.start.lon } : undefined}
+                countryCode={trip?.start?.countryCode}
+              />
+              <button
+                type="button"
+                className="cta secondary"
+                onClick={() => {
+                  setIsAddingStopByAddress(false);
+                  setAddStopText("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="action-bar">
+              <button className="cta" onClick={handleEditTrip}>
+                Edit trip
+              </button>
+              <button className="cta secondary" onClick={() => setIsAddingStopByAddress(true)}>
+                + Add waypoint
+              </button>
+            </div>
+          ))}
       </BottomSheet>
 
       <StopDetail checkpoint={detailCheckpoint} isOpen={isDetailOpen} onClose={closeDetail} />

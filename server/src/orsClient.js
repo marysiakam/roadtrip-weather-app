@@ -49,15 +49,11 @@ export async function geocodeAddress(text) {
   return { lat, lon, label: feature.properties.label, countryCode: feature.properties.country_a ?? null };
 }
 
-/**
- * `focus.point` only nudges ranking — it's not strong enough to move a
- * locally-relevant match (e.g. "Las Vegas, NV") above a globally prominent
- * same-prefix name on another continent (e.g. "Las Palmas, Spain"). Hard-
- * filtering to the start address's country with `boundary.country` is what
- * actually keeps destination suggestions relevant for a road trip.
- */
-export async function autocompleteAddress(text, focusPoint, countryCode) {
-  const params = new URLSearchParams({ text, size: "5" });
+const AUTOCOMPLETE_RESULT_SIZE = 5;
+const DOMESTIC_RESULT_CAP = 3;
+
+async function runAutocompleteQuery(text, focusPoint, countryCode) {
+  const params = new URLSearchParams({ text, size: String(AUTOCOMPLETE_RESULT_SIZE) });
   if (focusPoint) {
     params.set("focus.point.lat", String(focusPoint.lat));
     params.set("focus.point.lon", String(focusPoint.lon));
@@ -70,6 +66,44 @@ export async function autocompleteAddress(text, focusPoint, countryCode) {
     const [lon, lat] = feature.geometry.coordinates;
     return { lat, lon, label: feature.properties.label, countryCode: feature.properties.country_a ?? null };
   });
+}
+
+/**
+ * Neither `focus.point` alone nor a hard `boundary.country` filter alone gets
+ * this right: `focus.point` only nudges ranking, so a globally prominent
+ * same-name place (Bethlehem, Israel; Las Palmas, Spain) can still outrank a
+ * same-country match a road trip actually cares about (Bethlehem, PA; Las
+ * Vegas, NV) — but hard-filtering to one country makes genuinely global
+ * addresses (Tokyo, Poznan) return nothing at all.
+ *
+ * So we run both: a country-scoped query and an unrestricted one, then put
+ * domestic matches first and append any global matches not already present.
+ * Domestic relevance wins when it exists; global search still always works.
+ */
+export async function autocompleteAddress(text, focusPoint, countryCode) {
+  if (!countryCode) {
+    return runAutocompleteQuery(text, focusPoint);
+  }
+
+  const [domestic, global] = await Promise.all([
+    runAutocompleteQuery(text, focusPoint, countryCode),
+    runAutocompleteQuery(text, focusPoint),
+  ]);
+
+  // Cap domestic matches so a run of same-name local businesses (e.g. several
+  // "Tokyo ___" restaurants near Seattle) can't fill every slot and crowd out
+  // the actual global place (Tokyo, Japan) the user may genuinely want.
+  const merged = domestic.slice(0, DOMESTIC_RESULT_CAP);
+  const seen = new Set(merged.map((r) => `${r.lat},${r.lon}`));
+  for (const result of global) {
+    if (merged.length >= AUTOCOMPLETE_RESULT_SIZE) break;
+    const key = `${result.lat},${result.lon}`;
+    if (!seen.has(key)) {
+      merged.push(result);
+      seen.add(key);
+    }
+  }
+  return merged;
 }
 
 async function reverseGeocodeLayers(lat, lon, layers, radiusKm) {

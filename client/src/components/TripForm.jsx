@@ -125,7 +125,7 @@ export default function TripForm({ onSubmit, isLoading, onPreviewPin }) {
       />
 
       <div className="field">
-        <label htmlFor="departure">Leaving at</label>
+        <label htmlFor="departure">Leaving at (your local time)</label>
         <div className="departure-row">
           <input
             id="departure"

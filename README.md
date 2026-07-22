@@ -1,6 +1,6 @@
-# Roadtrip Weather
+# Roadtrip Weather Forecast
 
-> 🚧 **Work in progress.** Built with the assistance of [Claude](https://claude.com) (Anthropic's AI). Features, structure, and this README are still evolving.
+> **Work in progress.** Built with the assistance of Claude Code..
 
 Enter a start and end address and see the forecasted weather at each leg of
 your drive, timed to when you'll actually be there — with a heads-up if
@@ -49,7 +49,7 @@ cd server && npm run dev
 cd client && npm run dev
 ```
 
-Open the URL Vite prints (typically `http://localhost:5173`).
+Open the printed URL  (typically `http://localhost:5173`).
 
 ## Hazard thresholds (v1)
 
@@ -60,9 +60,4 @@ A checkpoint is flagged hazardous if any of the following are forecast:
 - Any winter weather (snow, freezing rain/drizzle)
 - Thunderstorms
 
-## Notes on v1 scope
 
-Per the PRD: no accounts/saved trips, no manual waypoint editing, no push
-notifications, no rerouting. Single departure time only. Checkpoints are
-generated at ~1-hour driving intervals (plus start/end), capped at 12 to
-keep the free-tier API calls reasonable on very long routes.

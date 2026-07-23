@@ -6,6 +6,10 @@ Enter a start and end address and see the forecasted weather at each leg of
 your drive, timed to when you'll actually be there — with a heads-up if
 anything hazardous is coming.
 
+<p>
+  <img src="docs/screenshots/trip-desktop.png" alt="Trip results: route map and per-stop weather timeline" width="49%" />
+</p>
+
 ## Architecture
 
 - `server/` — Express API. Holds the OpenRouteService API key server-side and
